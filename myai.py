@@ -6,7 +6,7 @@ import sqlite3
 import threading
 import asyncio
 from datetime import datetime
-from telegram import Bot, Update
+from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
 
 # --- CONFIGURARE BRANDING & API ---
@@ -73,55 +73,43 @@ def call_ai(prompt, model_url="kwaipilot/kat-coder-pro:free"):
     except:
         return "Eroare la procesarea AI."
 
-# --- TELEGRAM BOT LOGIC ---
+# --- TELEGRAM BOT LOGIC (Fixed) ---
 async def handle_tg_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message and update.message.text:
-        user_text = update.message.text
-        ai_response = call_ai(user_text)
+        ai_response = call_ai(update.message.text)
         await update.message.reply_text(ai_response)
 
 def run_telegram_bot():
+    # Creăm o buclă de evenimente nouă și curată pentru acest thread
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_tg_message))
-    app.run_polling()
+    
+    # Construim aplicația
+    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_tg_message))
+    
+    # Rulăm botul manual fără a folosi run_polling() care poate cauza conflicte de semnale în thread-uri
+    application.run_polling(close_loop=False, stop_signals=None)
 
-if "bot_started" not in st.session_state:
-    thread = threading.Thread(target=run_telegram_bot, daemon=True)
-    thread.start()
-    st.session_state.bot_started = True
+# Folosim st.cache_resource pentru a ne asigura că botul pornește o singură dată pe durata de viață a serverului
+@st.cache_resource
+def start_bot_thread():
+    bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
+    bot_thread.start()
+    return True
+
+# Pornim botul
+start_bot_thread()
 
 # --- STREAMLIT UI ---
 st.set_page_config(page_title=APP_NAME, page_icon="🤖", layout="wide", initial_sidebar_state="collapsed")
 
-# CSS corectat pentru a ascunde doar elementele nedorite
 st.markdown(f"""
-    <head>
-        <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-title" content="{APP_NAME}">
-        <link rel="apple-touch-icon" href="{APP_ICON_URL}">
-    </head>
     <style>
-        /* Ascunde link-urile GitHub/Streamlit de sus, dar lasă butonul de Sidebar */
-        header[data-testid="stHeader"] {{
-            background-color: rgba(0,0,0,0);
-        }}
-        header[data-testid="stHeader"] > div:first-child {{
-            visibility: hidden;
-        }}
-        /* Face butonul de sidebar vizibil din nou */
-        header[data-testid="stHeader"] [data-testid="stSidebarNavSeparator"] {{
-            visibility: visible;
-        }}
-        
-        /* Ascunde footer-ul "Made with Streamlit" */
+        header[data-testid="stHeader"] {{ background-color: rgba(0,0,0,0); }}
+        header[data-testid="stHeader"] > div:first-child {{ visibility: hidden; }}
         footer {{visibility: hidden;}}
-        
-        /* Ajustare padding pentru PWA */
-        .block-container {{
-            padding-top: 2rem;
-        }}
+        .block-container {{ padding-top: 2rem; }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -139,18 +127,17 @@ if prompt := st.chat_input("Scrie aici..."):
     with st.chat_message("user"):
         st.markdown(prompt)
     with st.chat_message("assistant"):
-        # Verificăm modelul selectat în sidebar
-        current_model = MODELS.get(st.session_state.get('model_choice', "Kat Coder Pro"), MODELS["Kat Coder Pro"])
-        response = call_ai(prompt, current_model)
+        model_name = st.session_state.get('model_choice', "Kat Coder Pro")
+        response = call_ai(prompt, MODELS.get(model_name))
         st.markdown(response)
         st.session_state.messages.append({"role": "assistant", "content": response})
 
 with st.sidebar:
     st.header("⚙️ Setări")
-    st.session_state.model_choice = st.selectbox("Alege Modelul", list(MODELS.keys()), index=0)
+    st.session_state.model_choice = st.selectbox("Alege Modelul", list(MODELS.keys()))
     st.divider()
-    st.success("Bot Telegram: Activ")
-    if st.button("Reset Vizual Chat"):
+    st.success("Telegram Bot: Activ")
+    if st.button("Reset Chat"):
         st.session_state.messages = []
         st.rerun()
 
