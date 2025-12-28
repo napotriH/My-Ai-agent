@@ -3,146 +3,198 @@ import requests
 import json
 import re
 import sqlite3
-import threading
-import asyncio
+import os
 from datetime import datetime
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters
 
-# --- CONFIGURARE BRANDING & API ---
+# --- CONFIGURARE BRANDING ---
 APP_ICON_URL = "https://cdn-icons-png.flaticon.com/512/1698/1698535.png"
-APP_NAME = "My AI Agent"
-TELEGRAM_TOKEN = "8275670272:AAHltc6EsWkLD3sb2pgApNDOuHbUeA5Mwns"
+APP_NAME = "AI Agent Pro"
 
+# --- API & MODELE ---
 try:
     API_KEY = st.secrets["OPENROUTER_API_KEY"]
 except KeyError:
-    st.error("Lipsește OPENROUTER_API_KEY în Secrets!")
+    st.error("Lipsește OPENROUTER_API_KEY în Secrets! Te rog adaugă cheia în setările Streamlit Cloud.")
     st.stop()
 
 MODELS = {
     "Kat Coder Pro": "kwaipilot/kat-coder-pro:free",
     "DeepSeek R1": "tngtech/deepseek-r1:free",
-    "Llama 3.3 70B": "meta-llama/llama-3.3-70b-instruct:free"
+    "Llama 3.3 70B": "meta-llama/llama-3.3-70b-instruct:free",
+    "Mimo V2 Flash": "xiaomi/mimo-v2-flash:free"
 }
 
-# --- DATABASE ENGINE ---
+# --- BAZĂ DE DATE (SQLite) ---
+DB_FILE = "agent_storage.db"
+
+def get_db_connection():
+    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
+    return conn
+
 def init_db():
-    conn = sqlite3.connect('agent_memory.db', check_same_thread=False)
-    c = conn.cursor()
-    c.execute('CREATE TABLE IF NOT EXISTS memory (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)')
-    c.execute('CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT, created_at TEXT)')
-    conn.commit()
-    conn.close()
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        # Tabel pentru memorie cheie-valoare
+        c.execute('''CREATE TABLE IF NOT EXISTS memory 
+                     (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)''')
+        # Tabel pentru notițe rapide
+        c.execute('''CREATE TABLE IF NOT EXISTS notes 
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT, timestamp TEXT)''')
+        conn.commit()
 
-def save_memory_sql(key, value):
-    conn = sqlite3.connect('agent_memory.db', check_same_thread=False)
-    c = conn.cursor()
-    c.execute("INSERT OR REPLACE INTO memory (key, value, updated_at) VALUES (?, ?, ?)", 
-              (key, value, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    conn.commit()
-    conn.close()
+def save_memory(key, value):
+    with get_all_db_data() as (mem, _):
+        with get_db_connection() as conn:
+            c = conn.cursor()
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            c.execute("INSERT OR REPLACE INTO memory (key, value, updated_at) VALUES (?, ?, ?)", (key, value, now))
+            conn.commit()
 
-def get_all_memory():
-    conn = sqlite3.connect('agent_memory.db', check_same_thread=False)
-    c = conn.cursor()
-    c.execute("SELECT key, value FROM memory")
-    mem = {row[0]: row[1] for row in c.fetchall()}
-    c.execute("SELECT content FROM notes ORDER BY id DESC")
-    notes = [row[0] for row in c.fetchall()]
-    conn.close()
-    return mem, notes
+def add_note(content):
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        c.execute("INSERT INTO notes (content, timestamp) VALUES (?, ?)", (content, now))
+        conn.commit()
+
+def get_all_db_data():
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        c.execute("SELECT key, value FROM memory")
+        mem = {row[0]: row[1] for row in c.fetchall()}
+        c.execute("SELECT content FROM notes ORDER BY id DESC")
+        notes = [row[0] for row in c.fetchall()]
+        return mem, notes
 
 init_db()
 
-# --- AI LOGIC ---
-def call_ai(prompt, model_url="kwaipilot/kat-coder-pro:free"):
-    mem, notes = get_all_memory()
-    system_p = f"Ești un Agent AI cu memorie SQL. Memorie actuală: {json.dumps(mem)}. Notițe: {', '.join(notes[:5])}."
-    try:
-        r = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json", "HTTP-Referer": "https://streamlit.io"},
-            json={"model": model_url, "messages": [{"role": "system", "content": system_p}, {"role": "user", "content": prompt}]}
-        )
-        resp = r.json()['choices'][0]['message']['content']
-        # Parsare comenzi memorie
-        if ":::MEMORIZE:" in resp:
-            match = re.search(r":::MEMORIZE:(.*?):(.*?):::", resp)
-            if match: save_memory_sql(match.group(1).strip(), match.group(2).strip())
-        return resp
-    except Exception as e:
-        return f"Eroare AI: {str(e)}"
-
-# --- TELEGRAM BOT LOGIC (REPARAT PENTRU PYTHON 3.13) ---
-async def handle_tg_message(update: Update, context):
-    if update.message and update.message.text:
-        response_text = call_ai(update.message.text)
-        await update.message.reply_text(response_text)
-
-def run_telegram_bot():
-    # Creăm un loop nou și îl setăm ca principal pentru acest thread
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+# --- LOGICĂ AI ---
+def ask_ai(prompt, model_url):
+    mem, notes = get_all_db_data()
     
-    # Folosim Application direct (fără Builder dacă apar erori de Updater)
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_tg_message))
-    
-    # Pornire manuală fără management de semnale care cauzează AttributeError în thread-uri
-    application.run_polling(
-        close_loop=False, 
-        stop_signals=None, 
-        drop_pending_updates=True
+    system_message = (
+        "Ești un Agent AI Avansat. Ai acces la o bază de date SQLite pentru memorie.\n"
+        f"Memorie curentă (JSON): {json.dumps(mem)}\n"
+        f"Notițe recente: {', '.join(notes[:5])}\n\n"
+        "Comenzi disponibile:\n"
+        "- Pentru memorare: :::MEMORIZE:cheie:valoare:::\n"
+        "- Pentru notițe: :::NOTE:text:::\n"
+        "Răspunde direct și execută comenzile dacă este necesar."
     )
 
-# Prevenim pornirea multiplă a botului la rerun-uri Streamlit
-@st.cache_resource
-def start_bot():
-    t = threading.Thread(target=run_telegram_bot, daemon=True)
-    t.start()
-    return True
+    messages = [{"role": "system", "content": system_message}]
+    # Păstrăm ultimele 10 mesaje din sesiune pentru context scurt
+    for m in st.session_state.messages[-10:]:
+        messages.append({"role": m["role"], "content": m["content"]})
+    messages.append({"role": "user", "content": prompt})
 
-start_bot()
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://streamlit.io"
+            },
+            json={"model": model_url, "messages": messages},
+            timeout=45
+        )
+        response.raise_for_status()
+        text = response.json()['choices'][0]['message']['content']
+        
+        # Procesare comenzi primite de la AI
+        if ":::MEMORIZE:" in text:
+            match = re.search(r":::MEMORIZE:(.*?):(.*?):::", text)
+            if match:
+                save_memory(match.group(1).strip(), match.group(2).strip())
+                st.toast(f"💾 Memorat: {match.group(1)}")
+        
+        if ":::NOTE:" in text:
+            match = re.search(r":::NOTE:(.*?):::", text)
+            if match:
+                add_note(match.group(1).strip())
+                st.toast("📝 Notiță salvată")
+                
+        return text
+    except Exception as e:
+        return f"⚠️ Eroare API: {str(e)}"
 
-# --- STREAMLIT UI ---
-st.set_page_config(page_title=APP_NAME, page_icon="🤖", layout="wide", initial_sidebar_state="collapsed")
+# --- INTERFAȚĂ (UI) ---
+st.set_page_config(
+    page_title=APP_NAME,
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
+# CSS pentru branding iPhone PWA și curățare UI
 st.markdown(f"""
     <style>
-        header[data-testid="stHeader"] {{ background-color: rgba(0,0,0,0); }}
-        header[data-testid="stHeader"] > div:first-child {{ visibility: hidden; }}
-        footer {{visibility: hidden;}}
-        .block-container {{ padding-top: 2rem; }}
+        /* PWA Meta Tags (emulate via Markdown) */
+        @media screen {{
+            head {{ display: block; }}
+            title {{ content: "{APP_NAME}"; }}
+        }}
+        
+        /* Ascunde elemente inutile dar lasă Sidebar Toggle */
+        header[data-testid="stHeader"] {{ background: rgba(0,0,0,0); }}
+        header[data-testid="stHeader"] > div:nth-child(2) {{ visibility: hidden; }}
+        footer {{ visibility: hidden; }}
+        
+        /* Design ajustat pentru mobil */
+        .block-container {{ padding-top: 1rem; padding-bottom: 5rem; }}
+        .stChatMessage {{ border-radius: 12px; border: 1px solid #2e2e2e; }}
+        
+        /* Iconiță Apple Home Screen */
+        link[rel="apple-touch-icon"] {{ content: url("{APP_ICON_URL}"); }}
     </style>
+    <link rel="apple-touch-icon" href="{APP_ICON_URL}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="{APP_NAME}">
 """, unsafe_allow_html=True)
 
+# --- SIDEBAR ---
+with st.sidebar:
+    st.title("⚙️ Setări Agent")
+    selected_model_name = st.selectbox("Alege Modelul", list(MODELS.keys()), index=0)
+    current_model_url = MODELS[selected_model_name]
+    
+    st.divider()
+    mem, notes = get_all_db_data()
+    
+    st.subheader("🧠 Bază de Date")
+    st.write(f"Înregistrări memorie: {len(mem)}")
+    st.write(f"Notițe salvate: {len(notes)}")
+    
+    if st.button("🗑️ Resetare Chat Vizual"):
+        st.session_state.messages = []
+        st.rerun()
+    
+    with st.expander("👁️ Vezi Memorie SQL"):
+        st.json(mem)
+        for n in notes[:10]:
+            st.caption(f"• {n}")
+
+# --- MAIN CHAT ---
 st.title(f"🤖 {APP_NAME}")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Afișare istoric
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-if prompt := st.chat_input("Scrie aici..."):
+# Input utilizator
+if prompt := st.chat_input("Cu ce te pot ajuta?"):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
-    with st.chat_message("assistant"):
-        model_name = st.session_state.get('model_choice', "Kat Coder Pro")
-        response = call_ai(prompt, MODELS.get(model_name))
-        st.markdown(response)
-        st.session_state.messages.append({"role": "assistant", "content": response})
 
-with st.sidebar:
-    st.header("⚙️ Setări")
-    st.session_state.model_choice = st.selectbox("Model AI", list(MODELS.keys()))
-    st.divider()
-    st.success("Bot Telegram: Activ")
-    st.info("Sfat: Aplicația salvează datele în SQLite.")
-    if st.button("Șterge Istoric Chat"):
-        st.session_state.messages = []
-        st.rerun()
+    with st.chat_message("assistant"):
+        with st.spinner("Gândesc..."):
+            ans = ask_ai(prompt, current_model_url)
+            st.markdown(ans)
+            st.session_state.messages.append({"role": "assistant", "content": ans})
 
