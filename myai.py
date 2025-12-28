@@ -7,7 +7,7 @@ import threading
 import asyncio
 from datetime import datetime
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from telegram.ext import Application, MessageHandler, filters
 
 # --- CONFIGURARE BRANDING & API ---
 APP_ICON_URL = "https://cdn-icons-png.flaticon.com/512/1698/1698535.png"
@@ -58,7 +58,7 @@ init_db()
 # --- AI LOGIC ---
 def call_ai(prompt, model_url="kwaipilot/kat-coder-pro:free"):
     mem, notes = get_all_memory()
-    system_p = f"Ești un Agent AI cu memorie SQL. Memorie: {json.dumps(mem)}. Notițe: {', '.join(notes[:5])}."
+    system_p = f"Ești un Agent AI cu memorie SQL. Memorie actuală: {json.dumps(mem)}. Notițe: {', '.join(notes[:5])}."
     try:
         r = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -66,40 +66,44 @@ def call_ai(prompt, model_url="kwaipilot/kat-coder-pro:free"):
             json={"model": model_url, "messages": [{"role": "system", "content": system_p}, {"role": "user", "content": prompt}]}
         )
         resp = r.json()['choices'][0]['message']['content']
+        # Parsare comenzi memorie
         if ":::MEMORIZE:" in resp:
             match = re.search(r":::MEMORIZE:(.*?):(.*?):::", resp)
             if match: save_memory_sql(match.group(1).strip(), match.group(2).strip())
         return resp
-    except:
-        return "Eroare la procesarea AI."
+    except Exception as e:
+        return f"Eroare AI: {str(e)}"
 
-# --- TELEGRAM BOT LOGIC (Fixed) ---
-async def handle_tg_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- TELEGRAM BOT LOGIC (REPARAT PENTRU PYTHON 3.13) ---
+async def handle_tg_message(update: Update, context):
     if update.message and update.message.text:
-        ai_response = call_ai(update.message.text)
-        await update.message.reply_text(ai_response)
+        response_text = call_ai(update.message.text)
+        await update.message.reply_text(response_text)
 
 def run_telegram_bot():
-    # Creăm o buclă de evenimente nouă și curată pentru acest thread
+    # Creăm un loop nou și îl setăm ca principal pentru acest thread
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     
-    # Construim aplicația
-    application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    # Folosim Application direct (fără Builder dacă apar erori de Updater)
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_tg_message))
     
-    # Rulăm botul manual fără a folosi run_polling() care poate cauza conflicte de semnale în thread-uri
-    application.run_polling(close_loop=False, stop_signals=None)
+    # Pornire manuală fără management de semnale care cauzează AttributeError în thread-uri
+    application.run_polling(
+        close_loop=False, 
+        stop_signals=None, 
+        drop_pending_updates=True
+    )
 
-# Folosim st.cache_resource pentru a ne asigura că botul pornește o singură dată pe durata de viață a serverului
+# Prevenim pornirea multiplă a botului la rerun-uri Streamlit
 @st.cache_resource
-def start_bot_thread():
-    bot_thread = threading.Thread(target=run_telegram_bot, daemon=True)
-    bot_thread.start()
+def start_bot():
+    t = threading.Thread(target=run_telegram_bot, daemon=True)
+    t.start()
     return True
 
-# Pornim botul
-start_bot_thread()
+start_bot()
 
 # --- STREAMLIT UI ---
 st.set_page_config(page_title=APP_NAME, page_icon="🤖", layout="wide", initial_sidebar_state="collapsed")
@@ -134,10 +138,11 @@ if prompt := st.chat_input("Scrie aici..."):
 
 with st.sidebar:
     st.header("⚙️ Setări")
-    st.session_state.model_choice = st.selectbox("Alege Modelul", list(MODELS.keys()))
+    st.session_state.model_choice = st.selectbox("Model AI", list(MODELS.keys()))
     st.divider()
-    st.success("Telegram Bot: Activ")
-    if st.button("Reset Chat"):
+    st.success("Bot Telegram: Activ")
+    st.info("Sfat: Aplicația salvează datele în SQLite.")
+    if st.button("Șterge Istoric Chat"):
         st.session_state.messages = []
         st.rerun()
 
