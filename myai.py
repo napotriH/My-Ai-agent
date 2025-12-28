@@ -62,11 +62,10 @@ def call_ai(prompt, model_url="kwaipilot/kat-coder-pro:free"):
     try:
         r = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
-            headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json", "HTTP-Referer": "https://streamlit.io"},
             json={"model": model_url, "messages": [{"role": "system", "content": system_p}, {"role": "user", "content": prompt}]}
         )
         resp = r.json()['choices'][0]['message']['content']
-        # Procesare memorare
         if ":::MEMORIZE:" in resp:
             match = re.search(r":::MEMORIZE:(.*?):(.*?):::", resp)
             if match: save_memory_sql(match.group(1).strip(), match.group(2).strip())
@@ -76,19 +75,18 @@ def call_ai(prompt, model_url="kwaipilot/kat-coder-pro:free"):
 
 # --- TELEGRAM BOT LOGIC ---
 async def handle_tg_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
-    ai_response = call_ai(user_text)
-    await update.message.reply_text(ai_response)
+    if update.message and update.message.text:
+        user_text = update.message.text
+        ai_response = call_ai(user_text)
+        await update.message.reply_text(ai_response)
 
 def run_telegram_bot():
-    # Creăm un nou loop de evenimente pentru acest thread
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_tg_message))
     app.run_polling()
 
-# Pornim botul doar o singură dată
 if "bot_started" not in st.session_state:
     thread = threading.Thread(target=run_telegram_bot, daemon=True)
     thread.start()
@@ -97,16 +95,37 @@ if "bot_started" not in st.session_state:
 # --- STREAMLIT UI ---
 st.set_page_config(page_title=APP_NAME, page_icon="🤖", layout="wide", initial_sidebar_state="collapsed")
 
+# CSS corectat pentru a ascunde doar elementele nedorite
 st.markdown(f"""
     <head>
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-title" content="{APP_NAME}">
         <link rel="apple-touch-icon" href="{APP_ICON_URL}">
     </head>
+    <style>
+        /* Ascunde link-urile GitHub/Streamlit de sus, dar lasă butonul de Sidebar */
+        header[data-testid="stHeader"] {{
+            background-color: rgba(0,0,0,0);
+        }}
+        header[data-testid="stHeader"] > div:first-child {{
+            visibility: hidden;
+        }}
+        /* Face butonul de sidebar vizibil din nou */
+        header[data-testid="stHeader"] [data-testid="stSidebarNavSeparator"] {{
+            visibility: visible;
+        }}
+        
+        /* Ascunde footer-ul "Made with Streamlit" */
+        footer {{visibility: hidden;}}
+        
+        /* Ajustare padding pentru PWA */
+        .block-container {{
+            padding-top: 2rem;
+        }}
+    </style>
 """, unsafe_allow_html=True)
 
 st.title(f"🤖 {APP_NAME}")
-st.caption("Aplicația rulează și botul de Telegram în fundal.")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -120,13 +139,17 @@ if prompt := st.chat_input("Scrie aici..."):
     with st.chat_message("user"):
         st.markdown(prompt)
     with st.chat_message("assistant"):
-        response = call_ai(prompt)
+        # Verificăm modelul selectat în sidebar
+        current_model = MODELS.get(st.session_state.get('model_choice', "Kat Coder Pro"), MODELS["Kat Coder Pro"])
+        response = call_ai(prompt, current_model)
         st.markdown(response)
         st.session_state.messages.append({"role": "assistant", "content": response})
 
 with st.sidebar:
-    st.header("⚙️ Status")
-    st.success("Telegram Bot: Activ")
+    st.header("⚙️ Setări")
+    st.session_state.model_choice = st.selectbox("Alege Modelul", list(MODELS.keys()), index=0)
+    st.divider()
+    st.success("Bot Telegram: Activ")
     if st.button("Reset Vizual Chat"):
         st.session_state.messages = []
         st.rerun()
