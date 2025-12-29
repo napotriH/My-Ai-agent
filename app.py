@@ -184,7 +184,8 @@ def feed_page():
                 col_comment, col_delete = st.columns([1, 1])
                 
                 with col_comment:
-                    if st.button(f"{icon('message-circle', 16)} Comentarii", key=f"comment_{post['id']}"):
+                    st.markdown(icon('message-circle', 16), unsafe_allow_html=True)
+                    if st.button("Comentarii", key=f"comment_{post['id']}"):
                         st.session_state.selected_post = post['id']
                         st.session_state.page = 'post_detail'
                         st.rerun()
