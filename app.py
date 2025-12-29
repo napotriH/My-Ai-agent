@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_lucide import lucide
 from database import Database, User, Community, Post, Comment, Message
 from datetime import datetime
 
@@ -28,7 +29,13 @@ if 'page' not in st.session_state:
     st.session_state.page = 'feed'
 
 def login_page():
-    st.title("🔥 Reddit Clone - Autentificare")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)
+        lucide("flame", size=48, color="#FF4500")
+        st.title("Reddit Clone")
+        st.markdown("</div>", unsafe_allow_html=True)
     
     tab1, tab2 = st.tabs(["Login", "Înregistrare"])
     
@@ -66,41 +73,73 @@ def login_page():
 
 def sidebar():
     with st.sidebar:
-        st.title("🔥 Reddit Clone")
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            lucide("flame", size=24, color="#FF4500")
+        with col2:
+            st.title("Reddit Clone")
         
         if st.session_state.user:
             st.write(f"Salut, **{st.session_state.user['username']}**!")
             st.write(f"Karma: {st.session_state.user['karma']}")
             
-            if st.button("🏠 Feed"):
-                st.session_state.page = 'feed'
-                st.rerun()
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                lucide("home", size=16)
+            with col2:
+                if st.button("Feed", key="nav_feed"):
+                    st.session_state.page = 'feed'
+                    st.rerun()
             
-            if st.button("🏘️ Comunități"):
-                st.session_state.page = 'communities'
-                st.rerun()
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                lucide("users", size=16)
+            with col2:
+                if st.button("Comunități", key="nav_communities"):
+                    st.session_state.page = 'communities'
+                    st.rerun()
             
-            if st.button("➕ Postare nouă"):
-                st.session_state.page = 'new_post'
-                st.rerun()
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                lucide("plus", size=16)
+            with col2:
+                if st.button("Postare nouă", key="nav_new_post"):
+                    st.session_state.page = 'new_post'
+                    st.rerun()
             
-            if st.button("👤 Profil"):
-                st.session_state.page = 'profile'
-                st.rerun()
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                lucide("user", size=16)
+            with col2:
+                if st.button("Profil", key="nav_profile"):
+                    st.session_state.page = 'profile'
+                    st.rerun()
             
-            if st.button("💬 Mesaje"):
-                st.session_state.page = 'messages'
-                st.rerun()
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                lucide("message-circle", size=16)
+            with col2:
+                if st.button("Mesaje", key="nav_messages"):
+                    st.session_state.page = 'messages'
+                    st.rerun()
             
             st.divider()
             
-            if st.button("🚪 Deconectează-te"):
-                st.session_state.user = None
-                st.session_state.page = 'feed'
-                st.rerun()
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                lucide("log-out", size=16)
+            with col2:
+                if st.button("Deconectează-te", key="nav_logout"):
+                    st.session_state.user = None
+                    st.session_state.page = 'feed'
+                    st.rerun()
 
 def feed_page():
-    st.title("🏠 Feed Principal")
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        lucide("home", size=24)
+    with col2:
+        st.title("Feed Principal")
     
     posts = post_manager.get_feed_posts()
     
@@ -113,9 +152,11 @@ def feed_page():
             col1, col2 = st.columns([1, 10])
             
             with col1:
-                st.button("⬆️", key=f"up_{post['id']}")
+                if st.button("⬆️", key=f"up_{post['id']}"):
+                    pass
                 st.write(f"{post['upvotes'] - post['downvotes']}")
-                st.button("⬇️", key=f"down_{post['id']}")
+                if st.button("⬇️", key=f"down_{post['id']}"):
+                    pass
             
             with col2:
                 st.subheader(post['title'])
@@ -124,19 +165,31 @@ def feed_page():
                 if post['post_type'] == 'text':
                     st.write(post['content'])
                 elif post['post_type'] == 'link':
-                    st.link_button("🔗 Vezi link", post['content'])
+                    col_link1, col_link2 = st.columns([1, 10])
+                    with col_link1:
+                        lucide("external-link", size=16)
+                    with col_link2:
+                        st.link_button("Vezi link", post['content'])
                 
                 col_comment, col_share = st.columns([1, 1])
                 with col_comment:
-                    if st.button(f"💬 Comentarii", key=f"comment_{post['id']}"):
-                        st.session_state.selected_post = post['id']
-                        st.session_state.page = 'post_detail'
-                        st.rerun()
+                    col_icon, col_btn = st.columns([1, 4])
+                    with col_icon:
+                        lucide("message-circle", size=16)
+                    with col_btn:
+                        if st.button("Comentarii", key=f"comment_{post['id']}"):
+                            st.session_state.selected_post = post['id']
+                            st.session_state.page = 'post_detail'
+                            st.rerun()
             
             st.divider()
 
 def communities_page():
-    st.title("🏘️ Comunități")
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        lucide("users", size=24)
+    with col2:
+        st.title("Comunități")
     
     tab1, tab2 = st.tabs(["Explorează", "Creează comunitate"])
     
@@ -173,7 +226,11 @@ def communities_page():
                 st.error("Completează toate câmpurile!")
 
 def new_post_page():
-    st.title("➕ Postare nouă")
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        lucide("plus", size=24)
+    with col2:
+        st.title("Postare nouă")
     
     communities = community_manager.get_all_communities()
     community_options = {f"r/{comm['name']}": comm['id'] for comm in communities}
@@ -210,7 +267,11 @@ def post_detail_page():
     post_id = st.session_state.selected_post
     comments = comment_manager.get_post_comments(post_id)
     
-    st.title("💬 Comentarii")
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        lucide("message-circle", size=24)
+    with col2:
+        st.title("Comentarii")
     
     # Formular pentru comentariu nou
     new_comment = st.text_area("Adaugă un comentariu")
@@ -256,7 +317,11 @@ def post_detail_page():
         st.rerun()
 
 def profile_page():
-    st.title("👤 Profilul meu")
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        lucide("user", size=24)
+    with col2:
+        st.title("Profilul meu")
     
     user = st.session_state.user
     
@@ -277,7 +342,11 @@ def profile_page():
             st.success("Profil actualizat!")
 
 def messages_page():
-    st.title("💬 Mesaje private")
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        lucide("message-circle", size=24)
+    with col2:
+        st.title("Mesaje private")
     
     tab1, tab2 = st.tabs(["Mesajele mele", "Trimite mesaj"])
     
