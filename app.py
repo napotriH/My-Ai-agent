@@ -1,7 +1,20 @@
 import streamlit as st
-from streamlit_lucide import lucide
 from database import Database, User, Community, Post, Comment, Message
 from datetime import datetime
+
+# Funcție pentru iconițe SVG
+def icon(name, size=16, color="currentColor"):
+    icons = {
+        "flame": f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>',
+        "home": f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9,22 9,12 15,12 15,22"/></svg>',
+        "users": f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m22 21-3.5-3.5a7 7 0 1 0-1.414 1.414L21 22"/></svg>',
+        "plus": f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>',
+        "user": f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+        "message-circle": f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>',
+        "log-out": f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+        "external-link": f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>'
+    }
+    return icons.get(name, '')
 
 # Configurare pagină
 st.set_page_config(
@@ -33,7 +46,7 @@ def login_page():
     
     with col2:
         st.markdown("<div style='text-align: center'>", unsafe_allow_html=True)
-        lucide("flame", size=48, color="#FF4500")
+        st.markdown(icon("flame", 48, "#FF4500"), unsafe_allow_html=True)
         st.title("Reddit Clone")
         st.markdown("</div>", unsafe_allow_html=True)
     
@@ -75,7 +88,7 @@ def sidebar():
     with st.sidebar:
         col1, col2 = st.columns([1, 3])
         with col1:
-            lucide("flame", size=24, color="#FF4500")
+            st.markdown(icon("flame", 24, "#FF4500"), unsafe_allow_html=True)
         with col2:
             st.title("Reddit Clone")
         
@@ -85,7 +98,7 @@ def sidebar():
             
             col1, col2 = st.columns([1, 4])
             with col1:
-                lucide("home", size=16)
+                st.markdown(icon("home", 16), unsafe_allow_html=True)
             with col2:
                 if st.button("Feed", key="nav_feed"):
                     st.session_state.page = 'feed'
@@ -93,7 +106,7 @@ def sidebar():
             
             col1, col2 = st.columns([1, 4])
             with col1:
-                lucide("users", size=16)
+                st.markdown(icon("users", 16), unsafe_allow_html=True)
             with col2:
                 if st.button("Comunități", key="nav_communities"):
                     st.session_state.page = 'communities'
@@ -101,7 +114,7 @@ def sidebar():
             
             col1, col2 = st.columns([1, 4])
             with col1:
-                lucide("plus", size=16)
+                st.markdown(icon("plus", 16), unsafe_allow_html=True)
             with col2:
                 if st.button("Postare nouă", key="nav_new_post"):
                     st.session_state.page = 'new_post'
@@ -109,7 +122,7 @@ def sidebar():
             
             col1, col2 = st.columns([1, 4])
             with col1:
-                lucide("user", size=16)
+                st.markdown(icon("user", 16), unsafe_allow_html=True)
             with col2:
                 if st.button("Profil", key="nav_profile"):
                     st.session_state.page = 'profile'
@@ -117,7 +130,7 @@ def sidebar():
             
             col1, col2 = st.columns([1, 4])
             with col1:
-                lucide("message-circle", size=16)
+                st.markdown(icon("message-circle", 16), unsafe_allow_html=True)
             with col2:
                 if st.button("Mesaje", key="nav_messages"):
                     st.session_state.page = 'messages'
@@ -127,7 +140,7 @@ def sidebar():
             
             col1, col2 = st.columns([1, 4])
             with col1:
-                lucide("log-out", size=16)
+                st.markdown(icon("log-out", 16), unsafe_allow_html=True)
             with col2:
                 if st.button("Deconectează-te", key="nav_logout"):
                     st.session_state.user = None
@@ -137,7 +150,7 @@ def sidebar():
 def feed_page():
     col1, col2 = st.columns([1, 10])
     with col1:
-        lucide("home", size=24)
+        st.markdown(icon("home", 24), unsafe_allow_html=True)
     with col2:
         st.title("Feed Principal")
     
@@ -167,7 +180,7 @@ def feed_page():
                 elif post['post_type'] == 'link':
                     col_link1, col_link2 = st.columns([1, 10])
                     with col_link1:
-                        lucide("external-link", size=16)
+                        st.markdown(icon("external-link", 16), unsafe_allow_html=True)
                     with col_link2:
                         st.link_button("Vezi link", post['content'])
                 
@@ -175,7 +188,7 @@ def feed_page():
                 with col_comment:
                     col_icon, col_btn = st.columns([1, 4])
                     with col_icon:
-                        lucide("message-circle", size=16)
+                        st.markdown(icon("message-circle", 16), unsafe_allow_html=True)
                     with col_btn:
                         if st.button("Comentarii", key=f"comment_{post['id']}"):
                             st.session_state.selected_post = post['id']
@@ -187,7 +200,7 @@ def feed_page():
 def communities_page():
     col1, col2 = st.columns([1, 10])
     with col1:
-        lucide("users", size=24)
+        st.markdown(icon("users", 24), unsafe_allow_html=True)
     with col2:
         st.title("Comunități")
     
@@ -228,7 +241,7 @@ def communities_page():
 def new_post_page():
     col1, col2 = st.columns([1, 10])
     with col1:
-        lucide("plus", size=24)
+        st.markdown(icon("plus", 24), unsafe_allow_html=True)
     with col2:
         st.title("Postare nouă")
     
@@ -269,7 +282,7 @@ def post_detail_page():
     
     col1, col2 = st.columns([1, 10])
     with col1:
-        lucide("message-circle", size=24)
+        st.markdown(icon("message-circle", 24), unsafe_allow_html=True)
     with col2:
         st.title("Comentarii")
     
@@ -319,7 +332,7 @@ def post_detail_page():
 def profile_page():
     col1, col2 = st.columns([1, 10])
     with col1:
-        lucide("user", size=24)
+        st.markdown(icon("user", 24), unsafe_allow_html=True)
     with col2:
         st.title("Profilul meu")
     
@@ -344,7 +357,7 @@ def profile_page():
 def messages_page():
     col1, col2 = st.columns([1, 10])
     with col1:
-        lucide("message-circle", size=24)
+        st.markdown(icon("message-circle", 24), unsafe_allow_html=True)
     with col2:
         st.title("Mesaje private")
     
