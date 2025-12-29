@@ -180,10 +180,24 @@ def feed_page():
                 elif post['post_type'] == 'link':
                     st.markdown(f"{icon('external-link', 16)} [Vezi link]({post['content']})", unsafe_allow_html=True)
                 
-                if st.button(f"{icon('message-circle', 16)} Comentarii", key=f"comment_{post['id']}"):
-                    st.session_state.selected_post = post['id']
-                    st.session_state.page = 'post_detail'
-                    st.rerun()
+                # Butoane pentru postare
+                col_comment, col_delete = st.columns([1, 1])
+                
+                with col_comment:
+                    if st.button(f"{icon('message-circle', 16)} Comentarii", key=f"comment_{post['id']}"):
+                        st.session_state.selected_post = post['id']
+                        st.session_state.page = 'post_detail'
+                        st.rerun()
+                
+                with col_delete:
+                    # Afișează butonul de ștergere doar pentru autorul postării
+                    if post['author_id'] == st.session_state.user['id']:
+                        if st.button("🗑️ Șterge", key=f"delete_{post['id']}"):
+                            if post_manager.delete_post(post['id'], st.session_state.user['id']):
+                                st.success("Postare ștearsă!")
+                                st.rerun()
+                            else:
+                                st.error("Eroare la ștergere!")
             
             st.divider()
 
