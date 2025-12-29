@@ -1,200 +1,223 @@
 import streamlit as st
 import requests
 import json
-import re
 import sqlite3
-import os
+import re
 from datetime import datetime
 
-# --- CONFIGURARE BRANDING ---
-APP_ICON_URL = "https://cdn-icons-png.flaticon.com/512/1698/1698535.png"
-APP_NAME = "AI Agent Pro"
+# --- CONFIGURARE ---
+APP_NAME = "AI-Reddit"
+APP_ICON = "https://cdn-icons-png.flaticon.com/512/52/52053.png"
 
-# --- API & MODELE ---
 try:
     API_KEY = st.secrets["OPENROUTER_API_KEY"]
 except KeyError:
-    st.error("Lipsește OPENROUTER_API_KEY în Secrets! Te rog adaugă cheia în setările Streamlit Cloud.")
+    st.error("Lipsește OPENROUTER_API_KEY! Adaugă cheia în Streamlit Secrets.")
     st.stop()
 
-MODELS = {
-    "Kat Coder Pro": "kwaipilot/kat-coder-pro:free",
-    "DeepSeek R1": "tngtech/deepseek-r1:free",
-    "Llama 3.3 70B": "meta-llama/llama-3.3-70b-instruct:free",
-    "Mimo V2 Flash": "xiaomi/mimo-v2-flash:free"
-}
-
-# --- BAZĂ DE DATE (SQLite) ---
-DB_FILE = "agent_storage.db"
-
-def get_db_connection():
-    conn = sqlite3.connect(DB_FILE, check_same_thread=False)
-    return conn
-
+# --- DATABASE ENGINE ---
 def init_db():
-    with get_db_connection() as conn:
-        c = conn.cursor()
-        # Tabel pentru memorie cheie-valoare
-        c.execute('''CREATE TABLE IF NOT EXISTS memory 
-                     (key TEXT PRIMARY KEY, value TEXT, updated_at TEXT)''')
-        # Tabel pentru notițe rapide
-        c.execute('''CREATE TABLE IF NOT EXISTS notes 
-                     (id INTEGER PRIMARY KEY AUTOINCREMENT, content TEXT, timestamp TEXT)''')
-        conn.commit()
+    conn = sqlite3.connect('social_ai.db', check_same_thread=False)
+    c = conn.cursor()
+    # Tabel Postări
+    c.execute('''CREATE TABLE IF NOT EXISTS posts 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, author TEXT, title TEXT, content TEXT, timestamp TEXT)''')
+    # Tabel Comentarii
+    c.execute('''CREATE TABLE IF NOT EXISTS comments 
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, author TEXT, content TEXT, timestamp TEXT)''')
+    # Tabel Memorie AI
+    c.execute('''CREATE TABLE IF NOT EXISTS ai_memory 
+                 (key TEXT PRIMARY KEY, value TEXT)''')
+    conn.commit()
+    conn.close()
 
-def save_memory(key, value):
-    with get_all_db_data() as (mem, _):
-        with get_db_connection() as conn:
-            c = conn.cursor()
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            c.execute("INSERT OR REPLACE INTO memory (key, value, updated_at) VALUES (?, ?, ?)", (key, value, now))
-            conn.commit()
+def add_post(author, title, content):
+    conn = sqlite3.connect('social_ai.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO posts (author, title, content, timestamp) VALUES (?, ?, ?, ?)",
+              (author, title, content, datetime.now().strftime("%Y-%m-%d %H:%M")))
+    conn.commit()
+    conn.close()
 
-def add_note(content):
-    with get_db_connection() as conn:
-        c = conn.cursor()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        c.execute("INSERT INTO notes (content, timestamp) VALUES (?, ?)", (content, now))
-        conn.commit()
+def add_comment(post_id, author, content):
+    conn = sqlite3.connect('social_ai.db')
+    c = conn.cursor()
+    c.execute("INSERT INTO comments (post_id, author, content, timestamp) VALUES (?, ?, ?, ?)",
+              (post_id, author, content, datetime.now().strftime("%Y-%m-%d %H:%M")))
+    conn.commit()
+    conn.close()
 
-def get_all_db_data():
-    with get_db_connection() as conn:
-        c = conn.cursor()
-        c.execute("SELECT key, value FROM memory")
-        mem = {row[0]: row[1] for row in c.fetchall()}
-        c.execute("SELECT content FROM notes ORDER BY id DESC")
-        notes = [row[0] for row in c.fetchall()]
-        return mem, notes
+def get_posts():
+    conn = sqlite3.connect('social_ai.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM posts ORDER BY id DESC")
+    posts = c.fetchall()
+    conn.close()
+    return posts
+
+def get_comments(post_id):
+    conn = sqlite3.connect('social_ai.db')
+    c = conn.cursor()
+    c.execute("SELECT author, content, timestamp FROM comments WHERE post_id = ? ORDER BY id ASC", (post_id,))
+    comments = c.fetchall()
+    conn.close()
+    return comments
 
 init_db()
 
-# --- LOGICĂ AI ---
-def ask_ai(prompt, model_url):
-    mem, notes = get_all_db_data()
-    
-    system_message = (
-        "Ești un Agent AI Avansat. Ai acces la o bază de date SQLite pentru memorie.\n"
-        f"Memorie curentă (JSON): {json.dumps(mem)}\n"
-        f"Notițe recente: {', '.join(notes[:5])}\n\n"
-        "Comenzi disponibile:\n"
-        "- Pentru memorare: :::MEMORIZE:cheie:valoare:::\n"
-        "- Pentru notițe: :::NOTE:text:::\n"
-        "Răspunde direct și execută comenzile dacă este necesar."
+# --- AI AGENT LOGIC ---
+def get_ai_response(context_text):
+    # Luăm memoria din DB
+    conn = sqlite3.connect('social_ai.db')
+    c = conn.cursor()
+    c.execute("SELECT * FROM ai_memory")
+    mem = {row[0]: row[1] for row in c.fetchall()}
+    conn.close()
+
+    system_prompt = (
+        f"Ești asistentul oficial al rețelei {APP_NAME}. "
+        f"Memoria ta actuală: {json.dumps(mem)}. "
+        "Dacă utilizatorul îți cere să reții ceva, folosește :::MEMORIZE:cheie:valoare::: în răspuns."
     )
 
-    messages = [{"role": "system", "content": system_message}]
-    # Păstrăm ultimele 10 mesaje din sesiune pentru context scurt
-    for m in st.session_state.messages[-10:]:
-        messages.append({"role": m["role"], "content": m["content"]})
-    messages.append({"role": "user", "content": prompt})
-
     try:
-        response = requests.post(
+        r = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {API_KEY}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://streamlit.io"
-            },
-            json={"model": model_url, "messages": messages},
-            timeout=45
+            headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": "kwaipilot/kat-coder-pro:free",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": context_text}
+                ]
+            }
         )
-        response.raise_for_status()
-        text = response.json()['choices'][0]['message']['content']
+        ans = r.json()['choices'][0]['message']['content']
         
-        # Procesare comenzi primite de la AI
-        if ":::MEMORIZE:" in text:
-            match = re.search(r":::MEMORIZE:(.*?):(.*?):::", text)
+        # Procesare memorie
+        if ":::MEMORIZE:" in ans:
+            match = re.search(r":::MEMORIZE:(.*?):(.*?):::", ans)
             if match:
-                save_memory(match.group(1).strip(), match.group(2).strip())
-                st.toast(f"💾 Memorat: {match.group(1)}")
-        
-        if ":::NOTE:" in text:
-            match = re.search(r":::NOTE:(.*?):::", text)
-            if match:
-                add_note(match.group(1).strip())
-                st.toast("📝 Notiță salvată")
-                
-        return text
-    except Exception as e:
-        return f"⚠️ Eroare API: {str(e)}"
+                conn = sqlite3.connect('social_ai.db')
+                c = conn.cursor()
+                c.execute("INSERT OR REPLACE INTO ai_memory (key, value) VALUES (?, ?)", 
+                          (match.group(1).strip(), match.group(2).strip()))
+                conn.commit()
+                conn.close()
+        return ans
+    except:
+        return "🤖 AI-ul este offline momentan."
 
-# --- INTERFAȚĂ (UI) ---
-st.set_page_config(
-    page_title=APP_NAME,
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+# --- UI UI UI ---
+st.set_page_config(page_title=APP_NAME, page_icon="📝", layout="centered")
 
-# CSS pentru branding iPhone PWA și curățare UI
-st.markdown(f"""
+# CSS pentru aspect de Reddit
+st.markdown("""
     <style>
-        /* PWA Meta Tags (emulate via Markdown) */
-        @media screen {{
-            head {{ display: block; }}
-            title {{ content: "{APP_NAME}"; }}
-        }}
-        
-        /* Ascunde elemente inutile dar lasă Sidebar Toggle */
-        header[data-testid="stHeader"] {{ background: rgba(0,0,0,0); }}
-        header[data-testid="stHeader"] > div:nth-child(2) {{ visibility: hidden; }}
-        footer {{ visibility: hidden; }}
-        
-        /* Design ajustat pentru mobil */
-        .block-container {{ padding-top: 1rem; padding-bottom: 5rem; }}
-        .stChatMessage {{ border-radius: 12px; border: 1px solid #2e2e2e; }}
-        
-        /* Iconiță Apple Home Screen */
-        link[rel="apple-touch-icon"] {{ content: url("{APP_ICON_URL}"); }}
+    .post-container {
+        background-color: #1A1A1B;
+        border: 1px solid #343536;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    .post-title { font-size: 20px; font-weight: bold; color: #D7DADC; }
+    .post-meta { font-size: 12px; color: #818384; margin-bottom: 10px; }
+    .comment-box {
+        margin-left: 20px;
+        border-left: 2px solid #343536;
+        padding-left: 15px;
+        margin-top: 10px;
+    }
     </style>
-    <link rel="apple-touch-icon" href="{APP_ICON_URL}">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-title" content="{APP_NAME}">
 """, unsafe_allow_html=True)
 
-# --- SIDEBAR ---
+# Branding PWA
+st.markdown(f"""
+    <head>
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-title" content="{APP_NAME}">
+        <link rel="apple-touch-icon" href="{APP_ICON}">
+    </head>
+""", unsafe_allow_html=True)
+
+st.title(f"🏠 {APP_NAME}")
+
+# Tabs: Feed, Postare Nouă, Asistent AI
+tab1, tab2, tab3 = st.tabs(["🔥 Feed", "➕ Creează", "🤖 Asistent"])
+
+with tab1:
+    posts = get_posts()
+    if not posts:
+        st.info("Nicio postare încă. Fii primul care scrie ceva!")
+    
+    for p_id, p_author, p_title, p_content, p_time in posts:
+        with st.container():
+            st.markdown(f"""
+            <div class="post-container">
+                <div class="post-meta">Postat de u/{p_author} • {p_time}</div>
+                <div class="post-title">{p_title}</div>
+                <p style="color: #D7DADC; margin-top:10px;">{p_content}</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Afișare comentarii
+            comments = get_comments(p_id)
+            for c_author, c_content, c_time in comments:
+                st.markdown(f"""
+                <div class="comment-box">
+                    <span style="font-size: 11px; color: #818384;">u/{c_author} • {c_time}</span><br>
+                    <span style="color: #D7DADC;">{c_content}</span>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Formular comentariu rapid
+            with st.expander("Comentează"):
+                c_text = st.text_area("Scrie un comentariu...", key=f"c_{p_id}")
+                if st.button("Trimite", key=f"b_{p_id}"):
+                    if c_text:
+                        add_comment(p_id, "Eu", c_text)
+                        st.rerun()
+
+with tab2:
+    st.header("Creează o postare nouă")
+    t_input = st.text_input("Titlu")
+    c_input = st.text_area("Conținut (Markdown suportat)")
+    if st.button("Postează"):
+        if t_input and c_input:
+            add_post("Eu", t_input, c_input)
+            st.success("Postare publicată!")
+            st.rerun()
+
+with tab3:
+    st.header("Discută cu Agentul AI")
+    st.write("Acest agent are acces la baza de date și îți poate răspunde la întrebări despre comunitate.")
+    
+    if "ai_chat" not in st.session_state:
+        st.session_state.ai_chat = []
+
+    for m in st.session_state.ai_chat:
+        with st.chat_message(m["role"]):
+            st.write(m["content"])
+
+    if ai_prompt := st.chat_input("Întreabă AI-ul..."):
+        st.session_state.ai_chat.append({"role": "user", "content": ai_prompt})
+        with st.chat_message("user"): st.write(ai_prompt)
+        
+        with st.chat_message("assistant"):
+            resp = get_ai_response(ai_prompt)
+            st.write(resp)
+            st.session_state.ai_chat.append({"role": "assistant", "content": resp})
+
 with st.sidebar:
-    st.title("⚙️ Setări Agent")
-    selected_model_name = st.selectbox("Alege Modelul", list(MODELS.keys()), index=0)
-    current_model_url = MODELS[selected_model_name]
-    
+    st.image(APP_ICON, width=100)
+    st.title("Profil")
+    st.write("u/Eu")
     st.divider()
-    mem, notes = get_all_db_data()
-    
-    st.subheader("🧠 Bază de Date")
-    st.write(f"Înregistrări memorie: {len(mem)}")
-    st.write(f"Notițe salvate: {len(notes)}")
-    
-    if st.button("🗑️ Resetare Chat Vizual"):
-        st.session_state.messages = []
-        st.rerun()
-    
-    with st.expander("👁️ Vezi Memorie SQL"):
-        st.json(mem)
-        for n in notes[:10]:
-            st.caption(f"• {n}")
-
-# --- MAIN CHAT ---
-st.title(f"🤖 {APP_NAME}")
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# Afișare istoric
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-# Input utilizator
-if prompt := st.chat_input("Cu ce te pot ajuta?"):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
-    with st.chat_message("assistant"):
-        with st.spinner("Gândesc..."):
-            ans = ask_ai(prompt, current_model_url)
-            st.markdown(ans)
-            st.session_state.messages.append({"role": "assistant", "content": ans})
+    if st.button("Reset Bază de Date"):
+        import os
+        if os.path.exists("social_ai.db"):
+            os.remove("social_ai.db")
+            init_db()
+            st.rerun()
 
