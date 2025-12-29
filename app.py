@@ -217,11 +217,12 @@ def feed_page():
                 # Footer cu acțiuni
                 st.markdown("<div style='margin-top: 12px; padding-top: 8px; border-top: 1px solid #f0f0f0;'>", unsafe_allow_html=True)
                 
-                action_col1, action_col2, action_col3 = st.columns([2, 2, 6])
+                action_col1, action_col2, action_col3 = st.columns([1, 2, 7])
                 
                 with action_col1:
-                    st.markdown(f"<div style='display: flex; align-items: center; margin-bottom: 4px;'>{icon('message-circle', 16)}</div>", unsafe_allow_html=True)
-                    if st.button("Comentarii", key=f"comment_{post['id']}", use_container_width=True):
+                    # Iconița comentarii ca link clickable
+                    comment_key = f"comment_icon_{post['id']}"
+                    if st.button(f"{icon('message-circle', 20)}", key=comment_key, help="Vezi comentarii"):
                         st.session_state.selected_post = post['id']
                         st.session_state.page = 'post_detail'
                         st.rerun()
