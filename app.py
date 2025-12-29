@@ -178,22 +178,12 @@ def feed_page():
                 if post['post_type'] == 'text':
                     st.write(post['content'])
                 elif post['post_type'] == 'link':
-                    col_link1, col_link2 = st.columns([1, 10])
-                    with col_link1:
-                        st.markdown(icon("external-link", 16), unsafe_allow_html=True)
-                    with col_link2:
-                        st.link_button("Vezi link", post['content'])
+                    st.markdown(f"{icon('external-link', 16)} [Vezi link]({post['content']})", unsafe_allow_html=True)
                 
-                col_comment, col_share = st.columns([1, 1])
-                with col_comment:
-                    col_icon, col_btn = st.columns([1, 4])
-                    with col_icon:
-                        st.markdown(icon("message-circle", 16), unsafe_allow_html=True)
-                    with col_btn:
-                        if st.button("Comentarii", key=f"comment_{post['id']}"):
-                            st.session_state.selected_post = post['id']
-                            st.session_state.page = 'post_detail'
-                            st.rerun()
+                if st.button(f"{icon('message-circle', 16)} Comentarii", key=f"comment_{post['id']}"):
+                    st.session_state.selected_post = post['id']
+                    st.session_state.page = 'post_detail'
+                    st.rerun()
             
             st.divider()
 
