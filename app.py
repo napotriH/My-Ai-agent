@@ -238,13 +238,7 @@ def feed_page():
                 
                 st.markdown("</div>", unsafe_allow_html=True)
         
-        st.markdown("</div>", unsafe_allow_html=True)ger.delete_post(post['id'], st.session_state.user['id']):
-                                st.success("Postare ștearsă!")
-                                st.rerun()
-                            else:
-                                st.error("Eroare la ștergere!")
-            
-            st.divider()
+        st.markdown("</div>", unsafe_allow_html=True)
 
 def communities_page():
     col1, col2 = st.columns([1, 10])
