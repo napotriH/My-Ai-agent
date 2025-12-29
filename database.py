@@ -236,7 +236,7 @@ class Post:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT p.id, p.title, p.content, p.post_type, p.created_at, p.upvotes, p.downvotes,
-                   u.username, c.name as community_name
+                   u.username, c.name as community_name, p.author_id
             FROM posts p
             JOIN users u ON p.author_id = u.id
             JOIN communities c ON p.community_id = c.id
@@ -256,10 +256,31 @@ class Post:
                 'upvotes': post[5],
                 'downvotes': post[6],
                 'author': post[7],
-                'community': post[8]
+                'community': post[8],
+                'author_id': post[9]
             }
             for post in posts
         ]
+    
+    def delete_post(self, post_id: str, user_id: str) -> bool:
+        conn = self.db.get_connection()
+        cursor = conn.cursor()
+        
+        # Verifică dacă utilizatorul este autorul postării
+        cursor.execute("SELECT author_id FROM posts WHERE id = ?", (post_id,))
+        result = cursor.fetchone()
+        
+        if result and result[0] == user_id:
+            # Șterge comentariile asociate
+            cursor.execute("DELETE FROM comments WHERE post_id = ?", (post_id,))
+            # Șterge postarea
+            cursor.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+            conn.commit()
+            conn.close()
+            return True
+        
+        conn.close()
+        return False
 
 class Comment:
     def __init__(self, db: Database):
