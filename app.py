@@ -161,40 +161,83 @@ def feed_page():
         return
     
     for post in posts:
+        # Card container cu styling
+        st.markdown("""
+        <div style="
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        ">
+        """, unsafe_allow_html=True)
+        
         with st.container():
-            col1, col2 = st.columns([1, 10])
+            # Layout principal: votes + content
+            vote_col, content_col = st.columns([0.5, 9.5])
             
-            with col1:
-                if st.button("⬆️", key=f"up_{post['id']}"):
+            # Coloana de voturi
+            with vote_col:
+                st.markdown("<div style='text-align: center; padding: 8px;'>", unsafe_allow_html=True)
+                if st.button("⬆️", key=f"up_{post['id']}", help="Upvote"):
                     pass
-                st.write(f"{post['upvotes'] - post['downvotes']}")
-                if st.button("⬇️", key=f"down_{post['id']}"):
+                st.markdown(f"<div style='text-align: center; font-weight: bold; color: #666; margin: 4px 0;'>{post['upvotes'] - post['downvotes']}</div>", unsafe_allow_html=True)
+                if st.button("⬇️", key=f"down_{post['id']}", help="Downvote"):
                     pass
+                st.markdown("</div>", unsafe_allow_html=True)
             
-            with col2:
-                st.subheader(post['title'])
-                st.write(f"r/{post['community']} • u/{post['author']} • {post['created_at']}")
+            # Coloana de conținut
+            with content_col:
+                # Header cu meta info
+                st.markdown(f"""
+                <div style="margin-bottom: 8px;">
+                    <span style="color: #0079d3; font-weight: bold;">r/{post['community']}</span>
+                    <span style="color: #666; margin: 0 4px;">•</span>
+                    <span style="color: #666;">Postat de u/{post['author']}</span>
+                    <span style="color: #666; margin: 0 4px;">•</span>
+                    <span style="color: #666; font-size: 12px;">{post['created_at']}</span>
+                </div>
+                """, unsafe_allow_html=True)
                 
+                # Titlul postării
+                st.markdown(f"<h3 style='margin: 8px 0; color: #1a1a1b;'>{post['title']}</h3>", unsafe_allow_html=True)
+                
+                # Conținutul postării
                 if post['post_type'] == 'text':
-                    st.write(post['content'])
+                    st.markdown(f"<div style='margin: 12px 0; line-height: 1.5;'>{post['content']}</div>", unsafe_allow_html=True)
                 elif post['post_type'] == 'link':
-                    st.markdown(f"{icon('external-link', 16)} [Vezi link]({post['content']})", unsafe_allow_html=True)
+                    st.markdown(f"""
+                    <div style="margin: 12px 0;">
+                        {icon('external-link', 16)} 
+                        <a href="{post['content']}" target="_blank" style="color: #0079d3; text-decoration: none;">Vezi link</a>
+                    </div>
+                    """, unsafe_allow_html=True)
                 
-                # Butoane pentru postare
-                col_comment, col_delete = st.columns([1, 1])
+                # Footer cu acțiuni
+                st.markdown("<div style='margin-top: 12px; padding-top: 8px; border-top: 1px solid #f0f0f0;'>", unsafe_allow_html=True)
                 
-                with col_comment:
-                    st.markdown(icon('message-circle', 16), unsafe_allow_html=True)
-                    if st.button("Comentarii", key=f"comment_{post['id']}"):
+                action_col1, action_col2, action_col3 = st.columns([2, 2, 6])
+                
+                with action_col1:
+                    st.markdown(f"<div style='display: flex; align-items: center; margin-bottom: 4px;'>{icon('message-circle', 16)}</div>", unsafe_allow_html=True)
+                    if st.button("Comentarii", key=f"comment_{post['id']}", use_container_width=True):
                         st.session_state.selected_post = post['id']
                         st.session_state.page = 'post_detail'
                         st.rerun()
                 
-                with col_delete:
-                    # Afișează butonul de ștergere doar pentru autorul postării
+                with action_col2:
                     if post['author_id'] == st.session_state.user['id']:
-                        if st.button("🗑️ Șterge", key=f"delete_{post['id']}"):
+                        if st.button("🗑️ Șterge", key=f"delete_{post['id']}", use_container_width=True):
                             if post_manager.delete_post(post['id'], st.session_state.user['id']):
+                                st.success("Postare ștearsă!")
+                                st.rerun()
+                            else:
+                                st.error("Eroare la ștergere!")
+                
+                st.markdown("</div>", unsafe_allow_html=True)
+        
+        st.markdown("</div>", unsafe_allow_html=True)ger.delete_post(post['id'], st.session_state.user['id']):
                                 st.success("Postare ștearsă!")
                                 st.rerun()
                             else:
